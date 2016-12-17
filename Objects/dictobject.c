@@ -3290,7 +3290,32 @@ typedef struct {
     Py_ssize_t di_pos;
     PyObject* di_result; /* reusable result tuple for iteritems */
     Py_ssize_t len;
+    Py_ssize_t *rand_ord;
 } dictiterobject;
+
+// return random permutation of [0,size)
+static Py_ssize_t *
+get_rand_perm(Py_ssize_t size){
+    Py_ssize_t i, j, t, *rand_ord;
+    struct timeval t1;
+
+    gettimeofday(&t1, NULL);
+    srand(t1.tv_usec * t1.tv_sec); /*initialie seed*/
+
+    rand_ord = (Py_ssize_t *)malloc(size * sizeof(Py_ssize_t));
+    for (i = 0; i < size; ++i)
+      rand_ord[i] = i;
+
+    // size-1 since we dont need to swap the last element
+    for (i = 0; i < size-1; ++i){
+      j = i + rand()%(size-i);
+      t = rand_ord[i];
+      rand_ord[i] = rand_ord[j];
+      rand_ord[j] = t;
+    }
+
+    return rand_ord;
+}
 
 static PyObject *
 dictiter_new(PyDictObject *dict, PyTypeObject *itertype)
@@ -3304,6 +3329,7 @@ dictiter_new(PyDictObject *dict, PyTypeObject *itertype)
     di->di_used = dict->ma_used;
     di->di_pos = 0;
     di->len = dict->ma_used;
+	di->rand_ord = get_rand_perm(dict->ma_keys->dk_nentries);
     if (itertype == &PyDictIterItem_Type) {
         di->di_result = PyTuple_Pack(2, Py_None, Py_None);
         if (di->di_result == NULL) {
@@ -3320,6 +3346,7 @@ dictiter_new(PyDictObject *dict, PyTypeObject *itertype)
 static void
 dictiter_dealloc(dictiterobject *di)
 {
+    free(di->rand_ord);
     Py_XDECREF(di->di_dict);
     Py_XDECREF(di->di_result);
     PyObject_GC_Del(di);
@@ -3383,15 +3410,15 @@ dictiter_iternextkey(dictiterobject *di)
     if (d->ma_values) {
         if (i >= d->ma_used)
             goto fail;
-        key = DK_ENTRIES(k)[i].me_key;
-        assert(d->ma_values[i] != NULL);
+        key = DK_ENTRIES(k)[di->rand_ord[i]].me_key;
+        assert(d->ma_values[di->rand_ord[i]] != NULL);
     }
     else {
         Py_ssize_t n = k->dk_nentries;
-        PyDictKeyEntry *entry_ptr = &DK_ENTRIES(k)[i];
+        PyDictKeyEntry *entry_ptr = &DK_ENTRIES(k)[di->rand_ord[i]];
         while (i < n && entry_ptr->me_value == NULL) {
-            entry_ptr++;
             i++;
+            entry_ptr = &DK_ENTRIES(k)[di->rand_ord[i]];
         }
         if (i >= n)
             goto fail;
