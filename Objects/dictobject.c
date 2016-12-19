@@ -3293,25 +3293,32 @@ typedef struct {
     Py_ssize_t *rand_ord;
 } dictiterobject;
 
-// return random permutation of [0,size)
+// If size<=0, return array with single element 0 (to avoid segfault),
+// else return array of random permuation of 0,1,..(size-1)
+// Parameters used for random number generation are those used by glibc(GCC): 
+// https://en.wikipedia.org/wiki/Linear_congruential_generator#Parameters_in_common_use
 static Py_ssize_t *
-get_rand_perm(Py_ssize_t size){
+get_rand_perm(Py_ssize_t size, unsigned int seed)
+{
     Py_ssize_t i, j, t, *rand_ord;
-    struct timeval t1;
+    unsigned int a = 1103515245, c = 12345, m = 0x7fffffffU;
+    seed &= m;
 
-    gettimeofday(&t1, NULL);
-    srand(t1.tv_usec * t1.tv_sec); /*initialie seed*/
-
+    if (size <= 0)
+        size = 1;
     rand_ord = (Py_ssize_t *)malloc(size * sizeof(Py_ssize_t));
+    if (!rand_ord)
+        return NULL;
     for (i = 0; i < size; ++i)
-      rand_ord[i] = i;
+        rand_ord[i] = i;
 
-    // size-1 since we dont need to swap the last element
     for (i = 0; i < size-1; ++i){
-      j = i + rand()%(size-i);
-      t = rand_ord[i];
-      rand_ord[i] = rand_ord[j];
-      rand_ord[j] = t;
+        seed = (a*seed + c) & m;
+        j = i + (Py_ssize_t)(((double)seed)/(m+1)*(size-i));
+
+        t = rand_ord[i];
+        rand_ord[i] = rand_ord[j];
+        rand_ord[j] = t;
     }
 
     return rand_ord;
@@ -3321,6 +3328,9 @@ static PyObject *
 dictiter_new(PyDictObject *dict, PyTypeObject *itertype)
 {
     dictiterobject *di;
+    unsigned int seed;
+    char *p, *next;
+
     di = PyObject_GC_New(dictiterobject, itertype);
     if (di == NULL)
         return NULL;
@@ -3329,7 +3339,25 @@ dictiter_new(PyDictObject *dict, PyTypeObject *itertype)
     di->di_used = dict->ma_used;
     di->di_pos = 0;
     di->len = dict->ma_used;
-	di->rand_ord = get_rand_perm(dict->ma_keys->dk_nentries);
+
+    p = Py_GETENV("NONDEXSEED");
+    if (p) {
+        seed = strtol (p, &next, 10);
+        if (next == p || *next != '\0')
+            seed = 1;
+    }
+    else
+        seed = 1;
+
+    di->rand_ord = get_rand_perm((dict->ma_values)?
+                        dict->ma_used : dict->ma_keys->dk_nentries, seed);
+    if (!di->rand_ord) {
+        PyErr_SetString(PyExc_MemoryError,
+                         "Out of memory while compressing data");
+        Py_DECREF(di);
+        return NULL;
+    }
+
     if (itertype == &PyDictIterItem_Type) {
         di->di_result = PyTuple_Pack(2, Py_None, Py_None);
         if (di->di_result == NULL) {
@@ -3410,15 +3438,25 @@ dictiter_iternextkey(dictiterobject *di)
     if (d->ma_values) {
         if (i >= d->ma_used)
             goto fail;
+
+        // key = DK_ENTRIES(k)[i].me_key;
+        // assert(d->ma_values[i] != NULL);
         key = DK_ENTRIES(k)[di->rand_ord[i]].me_key;
         assert(d->ma_values[di->rand_ord[i]] != NULL);
+
     }
     else {
         Py_ssize_t n = k->dk_nentries;
+
+        // PyDictKeyEntry *entry_ptr = &DK_ENTRIES(k)[i];
         PyDictKeyEntry *entry_ptr = &DK_ENTRIES(k)[di->rand_ord[i]];
+
         while (i < n && entry_ptr->me_value == NULL) {
             i++;
+
+            // entry_ptr++;
             entry_ptr = &DK_ENTRIES(k)[di->rand_ord[i]];
+
         }
         if (i >= n)
             goto fail;
@@ -3491,15 +3529,24 @@ dictiter_iternextvalue(dictiterobject *di)
     if (d->ma_values) {
         if (i >= d->ma_used)
             goto fail;
-        value = d->ma_values[i];
+
+        // value = d->ma_values[i];
+        value = d->ma_values[di->rand_ord[i]];
+
         assert(value != NULL);
     }
     else {
         Py_ssize_t n = d->ma_keys->dk_nentries;
-        PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[i];
+
+        // PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[i];
+        PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[di->rand_ord[i]];
+        
         while (i < n && entry_ptr->me_value == NULL) {
-            entry_ptr++;
             i++;
+
+            // entry_ptr++;
+            entry_ptr = &DK_ENTRIES(d->ma_keys)[di->rand_ord[i]];
+
         }
         if (i >= n)
             goto fail;
@@ -3572,16 +3619,25 @@ dictiter_iternextitem(dictiterobject *di)
     if (d->ma_values) {
         if (i >= d->ma_used)
             goto fail;
-        key = DK_ENTRIES(d->ma_keys)[i].me_key;
-        value = d->ma_values[i];
+
+        // key = DK_ENTRIES(d->ma_keys)[i].me_key;
+        // value = d->ma_values[i];
+        key = DK_ENTRIES(d->ma_keys)[di->rand_ord[i]].me_key;
+        value = d->ma_values[di->rand_ord[i]];
+
         assert(value != NULL);
     }
     else {
         Py_ssize_t n = d->ma_keys->dk_nentries;
-        PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[i];
+
+        // PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[i];
+        PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[di->rand_ord[i]];
         while (i < n && entry_ptr->me_value == NULL) {
-            entry_ptr++;
             i++;
+
+            // entry_ptr++;
+            entry_ptr = &DK_ENTRIES(d->ma_keys)[i];
+
         }
         if (i >= n)
             goto fail;
