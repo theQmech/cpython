@@ -3294,7 +3294,7 @@ typedef struct {
 } dictiterobject;
 
 // If size<=0, return array with single element 0 (to avoid segfault),
-// else return array of random permuation of 0,1,..(size-1)
+// else return array of random permuation of 0,1,...,(size-1)
 // Parameters used for random number generation are those used by glibc(GCC): 
 // https://en.wikipedia.org/wiki/Linear_congruential_generator#Parameters_in_common_use
 static Py_ssize_t *
@@ -3353,7 +3353,7 @@ dictiter_new(PyDictObject *dict, PyTypeObject *itertype)
                         dict->ma_used : dict->ma_keys->dk_nentries, seed);
     if (!di->rand_ord) {
         PyErr_SetString(PyExc_MemoryError,
-                         "Out of memory while compressing data");
+                         "Out of memory while allotting dict iterator [NonDex]");
         Py_DECREF(di);
         return NULL;
     }
@@ -3632,6 +3632,7 @@ dictiter_iternextitem(dictiterobject *di)
 
         // PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[i];
         PyDictKeyEntry *entry_ptr = &DK_ENTRIES(d->ma_keys)[di->rand_ord[i]];
+
         while (i < n && entry_ptr->me_value == NULL) {
             i++;
 

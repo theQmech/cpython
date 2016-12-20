@@ -7,6 +7,8 @@ for i in range(sz):
 print(d.keys())
 print(d.keys())
 
+print("====================================================")
+
 d = {}
 sz = 1
 for i in range(sz):
@@ -15,6 +17,8 @@ for i in range(sz):
 
 print(d.keys())
 print(d.keys())
+
+print("====================================================")
 
 d = {}
 sz = 0
