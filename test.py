@@ -1,31 +1,55 @@
-d = {}
-sz = 13
-for i in range(sz):
-    d[chr(97+i)] = i
-    print("<%s,%d> added"%(chr(97+i), i))
+import unittest
+from random import randint
+from os import system
 
-print(d.keys())
-print(d.keys())
+class NonDexTest(unittest.TestCase):
 
-print("====================================================")
+    def test_size(self):
+        sz = [0, 1, 10]
+        for x in sz:
+            inorder_keys = []
+            d = {}
+            for i in range(x):
+                d[i] = i
+                inorder_keys.append(i)
+            ret = list(d.keys())
+            if x>=2:
+                self.assertNotEqual(inorder_keys, ret)
+                #slight probabiilty of still being equal
+            ret.sort()
+            self.assertEqual(inorder_keys, ret)
 
-d = {}
-sz = 1
-for i in range(sz):
-    d[chr(97+i)] = i
-    print("<%s,%d> added"%(chr(97+i), i))
+    # add more tests for testing over various seeds
 
-print(d.keys())
-print(d.keys())
+    def test_modifications(self):
+        # keep this high, so as to reduce chances of identity perm.
+        sz = 100
 
-print("====================================================")
+        inorder_keys = []
+        d = {}
+        for i in range(sz):
+            d[i] = i
+            inorder_keys.append(i)
 
-d = {}
-sz = 0
-for i in range(sz):
-    d[chr(97+i)] = i
-    print("<%s,%d> added"%(chr(97+i), i))
+        ret = list(d.keys())
+        self.assertNotEqual(inorder_keys, ret)
+        ret.sort()
+        self.assertEqual(inorder_keys, ret)
 
-print(d.keys())
-print(d.keys())
+        for i in range((int)(sz/2)):
+            inorder_keys.remove(i)
+            d.pop(i, None)
+        for i in range((int)(sz/2)):
+            inorder_keys.append(i+sz)
+            d[i+sz] = i+sz
 
+        # python3 onwards, dict returns keys in the order of addition 
+        # (under normal conditions)
+        ret = list(d.keys())
+        self.assertNotEqual(inorder_keys, ret)
+        ret.sort()
+        inorder_keys.sort()
+        self.assertEqual(inorder_keys, ret)
+
+if __name__ == '__main__':
+    unittest.main()
